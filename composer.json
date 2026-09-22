@@ -1,0 +1,39 @@
+{
+    "name": "ateskaya/laravel-rag",
+    "description": "Retrieval-augmented answering for Laravel applications, backed by Postgres and pgvector.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "rag", "pgvector", "openai", "embeddings", "retrieval"],
+    "require": {
+        "php": "^8.2",
+        "illuminate/bus": "^11.0|^12.0",
+        "illuminate/database": "^11.0|^12.0",
+        "illuminate/queue": "^11.0|^12.0",
+        "illuminate/support": "^11.0|^12.0",
+        "guzzlehttp/guzzle": "^7.8",
+        "smalot/pdfparser": "^2.9"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0",
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "IbrahimEnsar\\Rag\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "IbrahimEnsar\\Rag\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "IbrahimEnsar\\Rag\\RagServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
