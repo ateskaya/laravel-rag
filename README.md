@@ -46,7 +46,7 @@ Each of those has a fix, and the fixes are what this package is.
 ## Install
 
 ```bash
-composer require ibrahimensar/laravel-rag
+composer require ateskaya/laravel-rag
 php artisan vendor:publish --tag=rag-config
 php artisan migrate
 ```
