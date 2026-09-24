@@ -26,7 +26,7 @@ Each of those has a fix, and the fixes are what this package is.
 - **Structure-aware chunking** — splits on paragraphs, packs short ones together, falls back to sentence boundaries only when a paragraph is oversized, and hard-cuts only for text with no sentence structure at all (tables, minified payloads). Overlap carries context across boundaries.
 - **Queued ingestion** — the upload request returns as soon as text is stored. Embedding happens on its own queue, in batches, idempotently.
 - **Rate limits treated as normal** — 429 and 5xx are retried with exponential backoff under a wall-clock deadline. 4xx is not retried at all, because it never will succeed.
-- **Grounded answers with verified citations** — the model is told to cite; every citation it returns is then checked against what was actually sent. Invented citations are stripped, and an answer with no surviving citations is downgraded to a refusal.
+- **Grounded answers with verified citations** — the model is told to cite; every citation it returns is then checked against what was actually sent. Invented citations are stripped, and an answer with no surviving citations is downgraded to a refusal. That decision lives in `src/Answering/GroundingCheck.php`, which has no framework dependencies; its rules are pinned down in `tests/Feature/GroundingCheckTest.php`.
 - **Honest refusal** — a cosine-distance ceiling means "nothing here is close enough" is a reachable outcome, not a theoretical one.
 - **Cost and latency per query** — recorded from the provider's own usage figures, stored alongside the price list that produced them.
 - **Multi-tenant by default** — every chunk carries a `collection`, and the filter is applied inside the SQL, not after it.
