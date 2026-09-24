@@ -24,7 +24,8 @@ use IbrahimEnsar\Rag\Support\CostMeter;
  *  3. Every citation the model returns is checked against the chunks that were
  *     actually sent. A model that invents source [9] gets that citation
  *     stripped, and an answer left with no valid citations is downgraded to a
- *     refusal rather than returned.
+ *     refusal rather than returned. That logic lives in GroundingCheck, which
+ *     has no framework dependencies and is tested on its own.
  *
  * Step 3 is the one that does the real work. Instructions alone are a request;
  * validating the output is a guarantee.
@@ -93,61 +94,43 @@ class AnswerService
 
         $meter->record($this->chat->model(), $completion->promptTokens, $completion->completionTokens);
 
-        $decoded = json_decode($completion->content, true);
+        $check = GroundingCheck::evaluate($completion->content, $chunks);
 
-        if (! is_array($decoded) || ! isset($decoded['answer'])) {
-            return $this->log(
-                $collection,
-                $question,
-                Answer::failed('The model returned a body this service could not parse.', $meter->totalUsd(), $this->elapsed($startedAt)),
-                $meter, count($chunks), 0, $bestDistance
-            );
-        }
+        $answer = match ($check->outcome) {
+            GroundingCheck::UNPARSEABLE => Answer::failed(
+                'The model returned a body this service could not parse.',
+                $meter->totalUsd(),
+                $this->elapsed($startedAt),
+            ),
+            GroundingCheck::INSUFFICIENT => Answer::refused(
+                $check->text ?? 'The sources do not contain enough to answer this.',
+                $meter->totalUsd(),
+                $this->elapsed($startedAt),
+            ),
+            GroundingCheck::UNGROUNDED => Answer::refused(
+                'An answer was produced but could not be traced to any source, so it was discarded.',
+                $meter->totalUsd(),
+                $this->elapsed($startedAt),
+            ),
+            GroundingCheck::ANSWERED => Answer::answered(
+                $completion->wasTruncated()
+                    ? $check->text."\n\n[This answer was cut off at the output limit.]"
+                    : $check->text,
+                $check->citations,
+                $meter->totalUsd(),
+                $this->elapsed($startedAt),
+            ),
+        };
 
-        if (($decoded['sufficient'] ?? true) === false) {
-            return $this->log(
-                $collection,
-                $question,
-                Answer::refused(
-                    is_string($decoded['answer']) && $decoded['answer'] !== ''
-                        ? $decoded['answer']
-                        : 'The sources do not contain enough to answer this.',
-                    $meter->totalUsd(),
-                    $this->elapsed($startedAt),
-                ),
-                $meter, count($chunks), 0, $bestDistance
-            );
-        }
-
-        $citations = $this->validateCitations($decoded['citations'] ?? [], $chunks);
-
-        if ($citations === []) {
-            // The model produced prose but cited nothing that was actually in
-            // front of it. That is the shape an invented answer takes, so it
-            // is refused rather than returned.
-            return $this->log(
-                $collection,
-                $question,
-                Answer::refused(
-                    'An answer was produced but could not be traced to any source, so it was discarded.',
-                    $meter->totalUsd(),
-                    $this->elapsed($startedAt),
-                ),
-                $meter, count($chunks), 0, $bestDistance
-            );
-        }
-
-        $text = (string) $decoded['answer'];
-
-        if ($completion->wasTruncated()) {
-            $text .= "\n\n[This answer was cut off at the output limit.]";
+        if (! $check->isAnswered()) {
+            return $this->log($collection, $question, $answer, $meter, count($chunks), 0, $bestDistance);
         }
 
         return $this->log(
             $collection,
             $question,
-            Answer::answered($text, $citations, $meter->totalUsd(), $this->elapsed($startedAt)),
-            $meter, count($chunks), count($citations), $bestDistance,
+            $answer,
+            $meter, count($chunks), count($check->citations), $bestDistance,
             $completion->promptTokens, $completion->completionTokens, $embedding->promptTokens
         );
     }
@@ -193,46 +176,6 @@ class AnswerService
             ['role' => 'system', 'content' => $system],
             ['role' => 'user', 'content' => $user],
         ];
-    }
-
-    /**
-     * @param  mixed  $raw
-     * @param  list<RetrievedChunk>  $chunks
-     * @return list<array{chunk_id: int, document_id: int, title: string, locator: ?string, similarity: float}>
-     */
-    private function validateCitations(mixed $raw, array $chunks): array
-    {
-        if (! is_array($raw)) {
-            return [];
-        }
-
-        $citations = [];
-
-        foreach ($raw as $number) {
-            if (! is_int($number) && ! (is_string($number) && ctype_digit($number))) {
-                continue;
-            }
-
-            $index = ((int) $number) - 1;
-
-            // The bounds check is the whole point: a hallucinated [9] against
-            // six sources lands here and is discarded.
-            if (! isset($chunks[$index])) {
-                continue;
-            }
-
-            $chunk = $chunks[$index];
-
-            $citations[$chunk->chunkId] = [
-                'chunk_id' => $chunk->chunkId,
-                'document_id' => $chunk->documentId,
-                'title' => $chunk->documentTitle,
-                'locator' => $chunk->locator,
-                'similarity' => $chunk->similarity(),
-            ];
-        }
-
-        return array_values($citations);
     }
 
     private function elapsed(float $startedAt): int
